@@ -1,5 +1,6 @@
 ARCHS = arm64
-TARGET = iphone:clang:16.0:15.0
+# Use a more compatible SDK version to avoid runner SDK mismatch
+TARGET = iphone:clang:15.0:15.0
 THEOS_PACKAGE_SCHEME = rootless
 
 include $(THEOS)/makefiles/common.mk
