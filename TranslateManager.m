@@ -97,13 +97,19 @@
         // Try Google unofficial format: [["...", "..."] , ...]
         if ([parsed isKindOfClass:[NSArray class]]) {
             NSArray *a = (NSArray *)parsed;
-            if (a.count > 0 && [a[0] isKindOfClass:[NSArray class]] && [a[0][0] isKindOfClass:[NSArray class]] && a[0][0].count > 0) {
-                NSString *tr = a[0][0][0];
-                if ([tr isKindOfClass:[NSString class]] && tr.length) {
-                    NSLog(@"SileoRU: google-format translation length=%lu", (unsigned long)tr.length);
-                    [self.disk setObject:tr forKey:text];
-                    [self.disk synchronize];
-                    cb(tr); return;
+            if (a.count > 0 && [a[0] isKindOfClass:[NSArray class]]) {
+                NSArray *first = (NSArray *)a[0];
+                if (first.count > 0 && [first[0] isKindOfClass:[NSArray class]]) {
+                    NSArray *inner = (NSArray *)first[0];
+                    if (inner.count > 0 && [inner[0] isKindOfClass:[NSString class]]) {
+                        NSString *tr = inner[0];
+                        if (tr.length) {
+                            NSLog(@"SileoRU: google-format translation length=%lu", (unsigned long)tr.length);
+                            [self.disk setObject:tr forKey:text];
+                            [self.disk synchronize];
+                            cb(tr); return;
+                        }
+                    }
                 }
             }
         }
