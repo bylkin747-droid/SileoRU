@@ -77,22 +77,39 @@
     completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
         if (!data || e) { NSLog(@"SileoRU: request error: %@", e); cb(text); return; }
         NSError *jsonErr = nil;
-        NSDictionary *json =
-        [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
-        if (jsonErr || ![json isKindOfClass:[NSDictionary class]]) {
+        id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
+        if (jsonErr) {
             NSLog(@"SileoRU: json parse error: %@", jsonErr);
             cb(text); return;
         }
-        NSString *tr = json[@"translatedText"];
-        NSLog(@"SileoRU: response translatedText length=%lu", (unsigned long)(tr ? tr.length : 0));
-        if (tr.length) {
-            [self.disk setObject:tr forKey:text];
-            [self.disk synchronize];
-            cb(tr);
-        } else {
-            NSLog(@"SileoRU: no translation in response, returning original");
-            cb(text);
+
+        // Try LibreTranslate style response: { "translatedText": "..." }
+        if ([parsed isKindOfClass:[NSDictionary class]]) {
+            NSString *tr = parsed[@"translatedText"];
+            NSLog(@"SileoRU: response translatedText length=%lu", (unsigned long)(tr ? tr.length : 0));
+            if (tr.length) {
+                [self.disk setObject:tr forKey:text];
+                [self.disk synchronize];
+                cb(tr); return;
+            }
         }
+
+        // Try Google unofficial format: [["...", "..."] , ...]
+        if ([parsed isKindOfClass:[NSArray class]]) {
+            NSArray *a = (NSArray *)parsed;
+            if (a.count > 0 && [a[0] isKindOfClass:[NSArray class]] && [a[0][0] isKindOfClass:[NSArray class]] && a[0][0].count > 0) {
+                NSString *tr = a[0][0][0];
+                if ([tr isKindOfClass:[NSString class]] && tr.length) {
+                    NSLog(@"SileoRU: google-format translation length=%lu", (unsigned long)tr.length);
+                    [self.disk setObject:tr forKey:text];
+                    [self.disk synchronize];
+                    cb(tr); return;
+                }
+            }
+        }
+
+        NSLog(@"SileoRU: no usable translation in response, returning original");
+        cb(text);
     }] resume];
 }
 @end
