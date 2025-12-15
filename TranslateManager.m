@@ -92,9 +92,45 @@
                 [self.disk synchronize];
                 cb(tr); return;
             }
+
+            // If LibreTranslate requires an API key, try Google fallback
+            NSString *err = parsed[@"error"];
+            if ([err isKindOfClass:[NSString class]] && [err containsString:@"portal.libretranslate.com"]) {
+                NSLog(@"SileoRU: LibreTranslate requires API key, trying Google fallback");
+                NSString *enc = [text stringByAddingPercentEncodingWithAllowedCharacters: NSCharacterSet.URLQueryAllowedCharacterSet];
+                NSString *gurl = [NSString stringWithFormat:@"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ru&dt=t&q=%@", enc];
+                NSURLRequest *greq = [NSURLRequest requestWithURL:[NSURL URLWithString:gurl]];
+                [[NSURLSession.sharedSession dataTaskWithRequest:greq completionHandler:^(NSData *gdata, NSURLResponse *gr, NSError *ge) {
+                    if (!gdata || ge) { NSLog(@"SileoRU: google fallback error: %@", ge); cb(text); return; }
+                    NSError *gjsonErr = nil;
+                    id gparsed = [NSJSONSerialization JSONObjectWithData:gdata options:0 error:&gjsonErr];
+                    if (gjsonErr || !gparsed) { NSLog(@"SileoRU: google json parse error: %@", gjsonErr); cb(text); return; }
+                    if ([gparsed isKindOfClass:[NSArray class]]) {
+                        NSArray *a = (NSArray *)gparsed;
+                        if (a.count > 0 && [a[0] isKindOfClass:[NSArray class]]) {
+                            NSArray *first = (NSArray *)a[0];
+                            if (first.count > 0 && [first[0] isKindOfClass:[NSArray class]]) {
+                                NSArray *inner = (NSArray *)first[0];
+                                if (inner.count > 0 && [inner[0] isKindOfClass:[NSString class]]) {
+                                    NSString *gtr = inner[0];
+                                    if (gtr.length) {
+                                        NSLog(@"SileoRU: google-format translation length=%lu", (unsigned long)gtr.length);
+                                        [self.disk setObject:gtr forKey:text];
+                                        [self.disk synchronize];
+                                        cb(gtr); return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    NSLog(@"SileoRU: google fallback returned no usable translation");
+                    cb(text);
+                }] resume];
+                return;
+            }
         }
 
-        // Try Google unofficial format: [["...", "..."] , ...]
+        // Try Google unofficial format in original response: [["...", "..."] , ...]
         if ([parsed isKindOfClass:[NSArray class]]) {
             NSArray *a = (NSArray *)parsed;
             if (a.count > 0 && [a[0] isKindOfClass:[NSArray class]]) {
