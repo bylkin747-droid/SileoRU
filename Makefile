@@ -1,5 +1,5 @@
 ARCHS = arm64
-TARGET = iphoneos:clang:latest:16.0
+TARGET = iphone:clang:latest:16.0
 INSTALL_TARGET_PROCESSES = Sileo
 THEOS_PACKAGE_SCHEME = rootless
 
