@@ -42,14 +42,18 @@
 - (void)translateIfNeeded:(NSString *)text
                completion:(void(^)(NSString *))cb {
 
+    NSLog(@"SileoRU: translateIfNeeded called enabled=%d wifiOnly=%d length=%lu", (int)self.enabled, (int)self.wifiOnly, (unsigned long)text.length);
+
     if (!self.enabled || text.length < 120 || [self isRussian:text]) {
+        NSLog(@"SileoRU: skipping translate (disabled/short/russian)");
         cb(text); return;
     }
 
     NSString *cached = [self.disk stringForKey:text];
-    if (cached) { cb(cached); return; }
+    if (cached) { NSLog(@"SileoRU: cache hit"); cb(cached); return; }
 
     if (self.wifiOnly && ![NetworkUtil isOnWiFi]) {
+        NSLog(@"SileoRU: wifi-only enabled and not on WiFi");
         cb(text); return;
     }
 
@@ -65,17 +69,30 @@
       NSCharacterSet.URLQueryAllowedCharacterSet]];
 
     req.HTTPBody = [body dataUsingEncoding:NSUTF8StringEncoding];
+    [req setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];
+
+    NSLog(@"SileoRU: sending request to %@ (body length=%lu)", url.absoluteString, (unsigned long)req.HTTPBody.length);
 
     [[NSURLSession.sharedSession dataTaskWithRequest:req
     completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
-        if (!data || e) { cb(text); return; }
+        if (!data || e) { NSLog(@"SileoRU: request error: %@", e); cb(text); return; }
+        NSError *jsonErr = nil;
         NSDictionary *json =
-        [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
+        if (jsonErr || ![json isKindOfClass:[NSDictionary class]]) {
+            NSLog(@"SileoRU: json parse error: %@", jsonErr);
+            cb(text); return;
+        }
         NSString *tr = json[@"translatedText"];
+        NSLog(@"SileoRU: response translatedText length=%lu", (unsigned long)(tr ? tr.length : 0));
         if (tr.length) {
             [self.disk setObject:tr forKey:text];
+            [self.disk synchronize];
             cb(tr);
-        } else cb(text);
+        } else {
+            NSLog(@"SileoRU: no translation in response, returning original");
+            cb(text);
+        }
     }] resume];
 }
 @end
