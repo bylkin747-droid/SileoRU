@@ -1,0 +1,10 @@
+Package: com.andrey.sileoru2
+Name: SileoRU2
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: Перевод описаний твиков в Sileo 2.5.1 на русский (rootless, Dopamine) с кэшированием
+Maintainer: Andrey
+Author: Andrey
+Section: Tweaks
+Depends: firmware (>= 15.0), com.opa334.ellekit
+Priority: optional
