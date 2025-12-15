@@ -1,0 +1,9 @@
+Package: com.yourname.sileoru
+Name: Sileo Russian Descriptions
+Depends: mobilesubstrate
+Version: 1.2.0
+Architecture: iphoneos-arm64
+Description: Translates Sileo package descriptions to Russian (RU-only)
+Maintainer: you
+Author: you
+Section: Tweaks
