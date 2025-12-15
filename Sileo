@@ -1,0 +1,235 @@
+Makefile
+ARCHS = arm64
+TARGET = iphoneos:clang:latest:16.0
+INSTALL_TARGET_PROCESSES = Sileo
+THEOS_PACKAGE_SCHEME = rootless
+
+include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME = SileoRU
+SileoRU_FILES = Tweak.xm TranslateManager.m NetworkUtil.m
+SileoRU_CFLAGS = -fobjc-arc
+
+include $(THEOS_MAKE_PATH)/tweak.mk
+
+SUBPROJECTS += Preferences
+include $(THEOS_MAKE_PATH)/aggregate.mk
+
+after-install::
+	install.exec "killall -9 Sileo || true"
+
+control
+Package: com.yourname.sileoru
+Name: Sileo Russian Descriptions
+Depends: mobilesubstrate
+Version: 1.2.0
+Architecture: iphoneos-arm64
+Description: Translates Sileo package descriptions to Russian (RU-only)
+Maintainer: you
+Author: you
+Section: Tweaks
+
+Tweak.xm
+#import <UIKit/UIKit.h>
+#import "TranslateManager.h"
+
+static BOOL IsSileo() {
+	return [[[NSBundle mainBundle] bundleIdentifier]
+	        isEqualToString:@"org.coolstar.SileoStore"];
+}
+
+static BOOL IsPackageDescription(UITextView *tv) {
+	return tv.scrollEnabled &&
+	       tv.text.length > 120 &&
+	       tv.frame.size.height > 100;
+}
+
+%hook UITextView
+- (void)setText:(NSString *)text {
+	if (IsSileo() && IsPackageDescription(self)) {
+		[[TranslateManager shared] translateIfNeeded:text
+		 completion:^(NSString *t) {
+			dispatch_async(dispatch_get_main_queue(), ^{
+				%orig(t);
+			});
+		}];
+		return;
+	}
+	%orig(text);
+}
+%end
+
+TranslateManager.h
+#import <Foundation/Foundation.h>
+@interface TranslateManager : NSObject
++ (instancetype)shared;
+- (void)translateIfNeeded:(NSString *)text
+               completion:(void(^)(NSString *result))completion;
+@end
+
+TranslateManager.m
+#import "TranslateManager.h"
+#import "NetworkUtil.h"
+
+#define PREFS @"com.yourname.sileoru"
+
+@interface TranslateManager ()
+@property NSUserDefaults *disk;
+@property NSCache *memory;
+@end
+
+@implementation TranslateManager
+
++ (instancetype)shared {
+	static TranslateManager *m;
+	static dispatch_once_t once;
+	dispatch_once(&once, ^{
+		m = [TranslateManager new];
+		m.disk = [[NSUserDefaults alloc] initWithSuiteName:PREFS];
+		m.memory = [NSCache new];
+	});
+	return m;
+}
+
+- (BOOL)enabled {
+	return ![self.disk objectForKey:@"Enabled"] ||
+	       [self.disk boolForKey:@"Enabled"];
+}
+
+- (BOOL)wifiOnly {
+	return ![self.disk objectForKey:@"WifiOnly"] ||
+	       [self.disk boolForKey:@"WifiOnly"];
+}
+
+- (BOOL)isRussian:(NSString *)text {
+	NSRegularExpression *re =
+	[NSRegularExpression regularExpressionWithPattern:@"[А-Яа-я]"
+	 options:0 error:nil];
+	return [re numberOfMatchesInString:text options:0
+	 range:NSMakeRange(0, text.length)] > 5;
+}
+
+- (void)translateIfNeeded:(NSString *)text
+               completion:(void(^)(NSString *))cb {
+
+	if (!self.enabled || text.length < 120 || [self isRussian:text]) {
+		cb(text); return;
+	}
+
+	NSString *cached = [self.disk stringForKey:text];
+	if (cached) { cb(cached); return; }
+
+	if (self.wifiOnly && ![NetworkUtil isOnWiFi]) {
+		cb(text); return;
+	}
+
+	NSURL *url = [NSURL URLWithString:@"https://libretranslate.com/translate"];
+	NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+	req.HTTPMethod = @"POST";
+	req.timeoutInterval = 8.0;
+
+	NSString *body =
+	[NSString stringWithFormat:
+	 @"q=%@&source=auto&target=ru&format=text",
+	 [text stringByAddingPercentEncodingWithAllowedCharacters:
+	  NSCharacterSet.URLQueryAllowedCharacterSet]];
+
+	req.HTTPBody = [body dataUsingEncoding:NSUTF8StringEncoding];
+
+	[[NSURLSession.sharedSession dataTaskWithRequest:req
+	completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
+		if (!data || e) { cb(text); return; }
+		NSDictionary *json =
+		[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+		NSString *tr = json[@"translatedText"];
+		if (tr.length) {
+			[self.disk setObject:tr forKey:text];
+			cb(tr);
+		} else cb(text);
+	}] resume];
+}
+@end
+
+NetworkUtil.h
+#import <Foundation/Foundation.h>
+@interface NetworkUtil : NSObject
++ (BOOL)isOnWiFi;
+@end
+
+NetworkUtil.m
+#import "NetworkUtil.h"
+#import <SystemConfiguration/SystemConfiguration.h>
+
+@implementation NetworkUtil
++ (BOOL)isOnWiFi {
+	SCNetworkReachabilityRef ref =
+	SCNetworkReachabilityCreateWithName(NULL, "apple.com");
+	SCNetworkReachabilityFlags flags;
+	BOOL ok = SCNetworkReachabilityGetFlags(ref, &flags);
+	CFRelease(ref);
+	return ok && (flags & kSCNetworkReachabilityFlagsIsWWAN) == 0;
+}
+@end
+
+Preferences/Root.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN">
+<plist version="1.0">
+<dict>
+<key>items</key>
+<array>
+	<dict>
+		<key>cell</key><string>PSSwitchCell</string>
+		<key>label</key><string>Enable</string>
+		<key>key</key><string>Enabled</string>
+		<key>default</key><true/>
+	</dict>
+	<dict>
+		<key>cell</key><string>PSSwitchCell</string>
+		<key>label</key><string>Wi-Fi only</string>
+		<key>key</key><string>WifiOnly</string>
+		<key>default</key><true/>
+	</dict>
+</array>
+</dict>
+</plist>
+
+.github/workflows/build.yml
+name: Build SileoRU deb
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install deps
+      run: |
+        sudo apt update
+        sudo apt install -y git make clang lld ldid dpkg-dev fakeroot curl perl unzip
+
+    - name: Install Theos
+      run: |
+        git clone --recursive https://github.com/theos/theos.git $HOME/theos
+        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+    - name: Install SDKs
+      run: |
+        cd $HOME/theos/sdks
+        git clone https://github.com/theos/sdks.git
+
+    - name: Build
+      run: |
+        export THEOS=$HOME/theos
+        make clean
+        make package
+
+    - name: Upload deb
+      uses: actions/upload-artifact@v4
+      with:
+        name: SileoRU-deb
+        path: packages/*.deb
