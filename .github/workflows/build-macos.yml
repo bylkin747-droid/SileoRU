@@ -1,0 +1,40 @@
+name: Build SileoRU deb (macOS)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install deps
+      run: |
+        brew update || true
+        brew install dpkg || true
+        brew install ldid || true
+
+    - name: Install Theos
+      run: |
+        git clone --recursive https://github.com/theos/theos.git $HOME/theos
+        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+    - name: Install SDKs
+      run: |
+        cd $HOME/theos/sdks
+        git clone https://github.com/theos/sdks.git || true
+
+    - name: Build
+      run: |
+        export THEOS=$HOME/theos
+        cd $GITHUB_WORKSPACE
+        make clean
+        make package
+
+    - name: Upload deb
+      uses: actions/upload-artifact@v4
+      with:
+        name: SileoRU-deb
+        path: packages/*.deb
